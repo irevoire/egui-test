@@ -1,109 +1,122 @@
-/// We derive Deserialize/Serialize so we can persist app state on shutdown.
-#[derive(serde::Deserialize, serde::Serialize)]
-#[serde(default)] // if we add new fields, give them default values when deserializing old state
-pub struct TemplateApp {
-    // Example stuff:
-    label: String,
+use egui::{
+    color_picker::{color_edit_button_rgba, Alpha},
+    Color32, Pos2, Rgba, Rounding, Sense, Ui,
+};
+use rand::{Rng, SeedableRng};
 
-    #[serde(skip)] // This how you opt-out of serialization of a field
-    value: f32,
+pub struct Maze {
+    /// Seed used to generate the maze
+    seed: u64,
+    /// Should we enclose the maze before generating it
+    enclosed: bool,
+    /// Color of the walls
+    wall_color: Color32,
+    /// Color of the paths
+    path_color: Color32,
+    /// Dimensions in number of cells
+    dimensions: (usize, usize),
+    /// Size of every square of the path
+    size: usize,
 }
 
-impl Default for TemplateApp {
-    fn default() -> Self {
-        Self {
-            // Example stuff:
-            label: "Hello World!".to_owned(),
-            value: 2.7,
+impl Maze {
+    pub fn new() -> Self {
+        let mut rng = rand::thread_rng();
+        // we're going to keep the range of possible initial seed small so it renders well on screen
+        let seed = rng.gen_range(0..9999);
+
+        Maze {
+            seed,
+            wall_color: Color32::GOLD,
+            path_color: Color32::TRANSPARENT,
+            dimensions: (15, 15),
+            size: 30,
+            enclosed: false,
         }
     }
-}
 
-impl TemplateApp {
-    /// Called once before the first frame.
-    pub fn new(cc: &eframe::CreationContext<'_>) -> Self {
-        // This is also where you can customize the look and feel of egui using
-        // `cc.egui_ctx.set_visuals` and `cc.egui_ctx.set_fonts`.
+    pub fn configuration(&mut self, ui: &mut Ui) -> egui::Response {
+        ui.horizontal(|ui| {
+            ui.vertical(|ui| {
+                ui.label("Wall:");
+                let mut rgba = self.wall_color.into();
+                color_edit_button_rgba(ui, &mut rgba, Alpha::Opaque);
+                self.wall_color = rgba.into();
 
-        // Load previous app state (if any).
-        // Note that you must enable the `persistence` feature for this to work.
-        if let Some(storage) = cc.storage {
-            return eframe::get_value(storage, eframe::APP_KEY).unwrap_or_default();
+                ui.label("Path:");
+                let mut rgba = self.path_color.into();
+                color_edit_button_rgba(ui, &mut rgba, Alpha::Opaque);
+                self.path_color = rgba.into();
+            });
+            ui.label("Rng:");
+            ui.add(egui::DragValue::new(&mut self.seed).speed(1));
+            if ui.add(egui::Button::new("regenerate")).clicked() {
+                let mut rng = rand::thread_rng();
+                self.seed = rng.gen_range(0..9999);
+            };
+
+            ui.label("Cell size:");
+            ui.add(egui::DragValue::new(&mut self.size).speed(1));
+
+            ui.label("Maze width:");
+            ui.add(egui::DragValue::new(&mut self.dimensions.0).speed(1));
+            ui.label("Maze height:");
+            ui.add(egui::DragValue::new(&mut self.dimensions.1).speed(1));
+        })
+        .response
+    }
+
+    pub fn draw_on(&mut self, ui: &mut Ui) -> egui::Response {
+        let mut rng = rand::rngs::StdRng::seed_from_u64(self.seed);
+        let mut window = window_rs::WindowBuffer::new(self.dimensions.0, self.dimensions.1);
+        maze::MazeConfig {
+            path_color: u32::from_ne_bytes(self.path_color.to_array()),
+            wall_color: u32::from_ne_bytes(self.wall_color.to_array()),
+        }
+        .generate(&mut window, &mut rng);
+
+        let (response, painter) =
+            ui.allocate_painter(ui.available_size_before_wrap(), Sense::drag());
+
+        ui.set_min_width((window.width() * self.size) as f32);
+        ui.set_min_height((window.height() * self.size) as f32);
+
+        for x in 0..window.width() {
+            for y in 0..window.height() {
+                let color = window[(x, y)];
+
+                let rect = egui::Rect {
+                    min: Pos2 {
+                        x: x as f32 * self.size as f32,
+                        y: y as f32 * self.size as f32,
+                    },
+                    max: Pos2 {
+                        x: (x + 1) as f32 * self.size as f32,
+                        y: (y + 1) as f32 * self.size as f32,
+                    },
+                };
+                // println!("drawing rectangle {rect:?}");
+                let [r, g, b, a] = color.to_ne_bytes();
+                painter.rect_filled(
+                    rect,
+                    Rounding::ZERO,
+                    Color32::from_rgba_premultiplied(r, g, b, a),
+                );
+            }
         }
 
-        Default::default()
+        response
     }
 }
 
-impl eframe::App for TemplateApp {
-    /// Called by the frame work to save state before shutdown.
-    fn save(&mut self, storage: &mut dyn eframe::Storage) {
-        eframe::set_value(storage, eframe::APP_KEY, self);
-    }
-
+impl eframe::App for Maze {
     /// Called each time the UI needs repainting, which may be many times per second.
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
-        // Put your widgets into a `SidePanel`, `TopBottomPanel`, `CentralPanel`, `Window` or `Area`.
-        // For inspiration and more examples, go to https://emilk.github.io/egui
-
-        egui::TopBottomPanel::top("top_panel").show(ctx, |ui| {
-            // The top panel is often a good place for a menu bar:
-
-            egui::menu::bar(ui, |ui| {
-                // NOTE: no File->Quit on web pages!
-                let is_web = cfg!(target_arch = "wasm32");
-                if !is_web {
-                    ui.menu_button("File", |ui| {
-                        if ui.button("Quit").clicked() {
-                            ctx.send_viewport_cmd(egui::ViewportCommand::Close);
-                        }
-                    });
-                    ui.add_space(16.0);
-                }
-
-                egui::widgets::global_dark_light_mode_buttons(ui);
-            });
-        });
-
         egui::CentralPanel::default().show(ctx, |ui| {
-            // The central panel the region left after adding TopPanel's and SidePanel's
-            ui.heading("eframe template");
-
-            ui.horizontal(|ui| {
-                ui.label("Write something: ");
-                ui.text_edit_singleline(&mut self.label);
-            });
-
-            ui.add(egui::Slider::new(&mut self.value, 0.0..=10.0).text("value"));
-            if ui.button("Increment").clicked() {
-                self.value += 1.0;
-            }
-
-            ui.separator();
-
-            ui.add(egui::github_link_file!(
-                "https://github.com/emilk/eframe_template/blob/main/",
-                "Source code."
-            ));
-
-            ui.with_layout(egui::Layout::bottom_up(egui::Align::LEFT), |ui| {
-                powered_by_egui_and_eframe(ui);
-                egui::warn_if_debug_build(ui);
+            ui.vertical(|ui| {
+                self.configuration(ui);
+                self.draw_on(ui);
             });
         });
     }
-}
-
-fn powered_by_egui_and_eframe(ui: &mut egui::Ui) {
-    ui.horizontal(|ui| {
-        ui.spacing_mut().item_spacing.x = 0.0;
-        ui.label("Powered by ");
-        ui.hyperlink_to("egui", "https://github.com/emilk/egui");
-        ui.label(" and ");
-        ui.hyperlink_to(
-            "eframe",
-            "https://github.com/emilk/egui/tree/master/crates/eframe",
-        );
-        ui.label(".");
-    });
 }
