@@ -1,14 +1,12 @@
 use egui::{
     color_picker::{color_edit_button_rgba, Alpha},
-    Color32, Pos2, Rgba, Rounding, Sense, Ui,
+    Color32, Pos2, Rounding, Sense, Ui,
 };
 use rand::{Rng, SeedableRng};
 
 pub struct Maze {
     /// Seed used to generate the maze
     seed: u64,
-    /// Should we enclose the maze before generating it
-    enclosed: bool,
     /// Color of the walls
     wall_color: Color32,
     /// Color of the paths
@@ -31,23 +29,23 @@ impl Maze {
             path_color: Color32::TRANSPARENT,
             dimensions: (15, 15),
             size: 30,
-            enclosed: false,
         }
     }
 
     pub fn configuration(&mut self, ui: &mut Ui) -> egui::Response {
-        ui.horizontal(|ui| {
-            ui.vertical(|ui| {
-                ui.label("Wall:");
-                let mut rgba = self.wall_color.into();
-                color_edit_button_rgba(ui, &mut rgba, Alpha::Opaque);
-                self.wall_color = rgba.into();
+        ui.vertical(|ui| {
+            ui.label("Wall:");
+            let mut rgba = self.wall_color.into();
+            color_edit_button_rgba(ui, &mut rgba, Alpha::Opaque);
+            self.wall_color = rgba.into();
 
-                ui.label("Path:");
-                let mut rgba = self.path_color.into();
-                color_edit_button_rgba(ui, &mut rgba, Alpha::Opaque);
-                self.path_color = rgba.into();
-            });
+            ui.label("Path:");
+            let mut rgba = self.path_color.into();
+            color_edit_button_rgba(ui, &mut rgba, Alpha::Opaque);
+            self.path_color = rgba.into();
+
+            ui.separator();
+
             ui.label("Rng:");
             ui.add(egui::DragValue::new(&mut self.seed).speed(1));
             if ui.add(egui::Button::new("regenerate")).clicked() {
@@ -55,9 +53,10 @@ impl Maze {
                 self.seed = rng.gen_range(0..9999);
             };
 
+            ui.separator();
+
             ui.label("Cell size:");
             ui.add(egui::DragValue::new(&mut self.size).speed(1));
-
             ui.label("Maze width:");
             ui.add(egui::DragValue::new(&mut self.dimensions.0).speed(1));
             ui.label("Maze height:");
@@ -112,11 +111,11 @@ impl Maze {
 impl eframe::App for Maze {
     /// Called each time the UI needs repainting, which may be many times per second.
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        egui::SidePanel::right("Config").show(ctx, |ui| {
+            self.configuration(ui);
+        });
         egui::CentralPanel::default().show(ctx, |ui| {
-            ui.vertical(|ui| {
-                self.configuration(ui);
-                self.draw_on(ui);
-            });
+            self.draw_on(ui);
         });
     }
 }
