@@ -1,12 +1,14 @@
 use egui::{
     color_picker::{color_edit_button_rgba, Alpha},
-    Color32, Pos2, Rounding, Sense, Ui,
+    Color32, Pos2, Rounding, Sense, Ui, Vec2,
 };
 use rand::{Rng, SeedableRng};
 
 pub struct Maze {
     /// Seed used to generate the maze
     seed: u64,
+    /// Number of opened walls
+    opened_walls: usize,
     /// Color of the walls
     wall_color: Color32,
     /// Color of the paths
@@ -25,6 +27,7 @@ impl Maze {
 
         Maze {
             seed,
+            opened_walls: 0,
             wall_color: Color32::GOLD,
             path_color: Color32::TRANSPARENT,
             dimensions: (15, 15),
@@ -52,6 +55,8 @@ impl Maze {
                 let mut rng = rand::thread_rng();
                 self.seed = rng.gen_range(0..9999);
             };
+            ui.label("Opened walls:");
+            ui.add(egui::DragValue::new(&mut self.opened_walls).speed(1));
 
             ui.separator();
 
@@ -65,46 +70,52 @@ impl Maze {
         .response
     }
 
-    pub fn draw_on(&mut self, ui: &mut Ui) -> egui::Response {
+    pub fn draw_on(&mut self, ui: &mut Ui) {
         let mut rng = rand::rngs::StdRng::seed_from_u64(self.seed);
         let mut window = window_rs::WindowBuffer::new(self.dimensions.0, self.dimensions.1);
         maze::MazeConfig {
             path_color: u32::from_ne_bytes(self.path_color.to_array()),
             wall_color: u32::from_ne_bytes(self.wall_color.to_array()),
+            open_walls: self.opened_walls,
         }
         .generate(&mut window, &mut rng);
 
-        let (response, painter) =
-            ui.allocate_painter(ui.available_size_before_wrap(), Sense::drag());
+        egui::ScrollArea::both().show(ui, |ui| {
+            let (response, painter) = ui.allocate_painter(
+                Vec2::new(
+                    (self.size * window.width()) as f32,
+                    (self.size * window.height()) as f32,
+                ),
+                Sense::hover(),
+            );
 
-        ui.set_min_width((window.width() * self.size) as f32);
-        ui.set_min_height((window.height() * self.size) as f32);
+            let base_position = response.rect.left_top().to_vec2();
+            for x in 0..window.width() {
+                for y in 0..window.height() {
+                    let color = window[(x, y)];
 
-        for x in 0..window.width() {
-            for y in 0..window.height() {
-                let color = window[(x, y)];
+                    let rect = egui::Rect {
+                        min: Pos2 {
+                            x: x as f32 * self.size as f32,
+                            y: y as f32 * self.size as f32,
+                        },
+                        max: Pos2 {
+                            x: (x + 1) as f32 * self.size as f32,
+                            y: (y + 1) as f32 * self.size as f32,
+                        },
+                    };
 
-                let rect = egui::Rect {
-                    min: Pos2 {
-                        x: x as f32 * self.size as f32,
-                        y: y as f32 * self.size as f32,
-                    },
-                    max: Pos2 {
-                        x: (x + 1) as f32 * self.size as f32,
-                        y: (y + 1) as f32 * self.size as f32,
-                    },
-                };
-                // println!("drawing rectangle {rect:?}");
-                let [r, g, b, a] = color.to_ne_bytes();
-                painter.rect_filled(
-                    rect,
-                    Rounding::ZERO,
-                    Color32::from_rgba_premultiplied(r, g, b, a),
-                );
+                    let rect = rect.translate(base_position);
+
+                    let [r, g, b, a] = color.to_ne_bytes();
+                    painter.rect_filled(
+                        rect,
+                        Rounding::ZERO,
+                        Color32::from_rgba_premultiplied(r, g, b, a),
+                    );
+                }
             }
-        }
-
-        response
+        });
     }
 }
 
